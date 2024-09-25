@@ -1,0 +1,51 @@
+---
+- hosts: localhost
+  gather_facts: no
+  vars:
+    cluster_name: "my-eks-cluster"  # Change this to your EKS cluster name
+    eksctl_version: "0.190.0"       # Specify the desired eksctl version
+    desired_version: "1.30"         # The target Kubernetes version for the EKS cluster
+    region: "us-east-1"             # The region where your EKS cluster is located
+
+  tasks:
+
+    # Upgrade EKS cluster control plane
+    - name: Upgrade EKS control plane
+      ansible.builtin.command: >
+        eksctl upgrade cluster
+        --name {{ cluster_name }}
+        --region {{ region }}
+        --version {{ desired_version }}
+      register: control_plane_upgrade
+      ignore_errors: yes
+
+    - name: Output control plane upgrade result
+      debug:
+        msg: "{{ control_plane_upgrade.stdout }}"
+
+    # Get node groups for the cluster
+    - name: Get nodegroups for the cluster
+      ansible.builtin.command: eksctl get nodegroup --cluster {{ cluster_name }} --region {{ region }}
+      register: nodegroups
+      ignore_errors: yes
+
+    - name: Output nodegroup information
+      debug:
+        msg: "{{ nodegroups.stdout }}"
+
+    # Upgrade each nodegroup to the desired Kubernetes version
+    - name: Upgrade nodegroups
+      ansible.builtin.command: >
+        eksctl upgrade nodegroup
+        --cluster {{ cluster_name }}
+        --name {{ item }}
+        --kubernetes-version {{ desired_version }}
+      loop: "{{ nodegroups.stdout_lines | select('search', 'ng-') | list }}"
+      ignore_errors: yes
+
+    - name: Verify cluster upgrade
+      ansible.builtin.command: eksctl get cluster --name {{ cluster_name }} --region {{ region }}
+      register: cluster_info
+    - name: Output final cluster information
+      debug:
+        msg: "{{ cluster_info.stdout }}"
